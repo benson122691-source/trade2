@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="比較跨資產歷史回測和模型估算的投資模擬器">
+  <title>跨資產投資模擬器</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="跨資產投資模擬器首頁">
+      <span class="brand-mark" aria-hidden="true">T</span>
+      <span>
+        <strong>跨資產投資模擬器</strong>
+        <small>歷史回測與模型情境</small>
+      </span>
+    </a>
+    <span class="header-note">資料來源：Yahoo Finance</span>
+  </header>
+
+  <main class="page-shell">
+    <section class="intro">
+      <p class="eyebrow">投資方法比較</p>
+      <h1>同一筆預算，看看不同標的的歷史結果</h1>
+      <p class="intro-copy">
+        設定期間和投入方式後，查看資產價值、風險指標與模型估算。
+        每個標的都單獨使用完整預算計算。
+      </p>
+    </section>
+
+    <div class="workspace">
+      <aside class="settings-panel" aria-labelledby="settings-title">
+        <div class="panel-heading">
+          <p class="eyebrow">模擬參數</p>
+          <h2 id="settings-title">設定回測條件</h2>
+        </div>
+        <form id="simulation-form">
+          <div class="field-group">
+            <label for="start-date">開始日期</label>
+            <input id="start-date" name="start_date" type="date"
+                   value="{{ default_start }}" max="{{ today }}" required>
+          </div>
+          <div class="field-group">
+            <label for="end-date">結束日期</label>
+            <input id="end-date" name="end_date" type="date"
+                   value="{{ today }}" max="{{ today }}" required>
+          </div>
+          <div class="field-group">
+            <label for="principal">總投入預算</label>
+            <div class="money-input">
+              <span>NT$</span>
+              <input id="principal" name="principal" type="number"
+                     value="100000" min="1000" max="100000000" step="1000" required>
+            </div>
+            <small>每個標的都各自使用這筆預算</small>
+          </div>
+          <fieldset class="field-group">
+            <legend>投入方式</legend>
+            <label class="radio-option">
+              <input type="radio" name="method" value="once" checked>
+              <span><strong>一次投入</strong><small>期間開始時投入全部預算</small></span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="method" value="monthly">
+              <span><strong>定期定額</strong><small>把總預算平均分到每月</small></span>
+            </label>
+          </fieldset>
+          <div class="field-group">
+            <label for="horizon">模型預測期間</label>
+            <select id="horizon" name="horizon">
+              <option value="5">5 個有效行情觀測</option>
+              <option value="10">10 個有效行情觀測</option>
+              <option value="20" selected>20 個有效行情觀測</option>
+              <option value="60">60 個有效行情觀測</option>
+              <option value="120">120 個有效行情觀測</option>
+              <option value="252">252 個有效行情觀測</option>
+            </select>
+            <small>比特幣與 ETF 的交易日曆不同</small>
+          </div>
+          <fieldset class="field-group asset-options">
+            <legend>比較標的</legend>
+            {% for asset in assets %}
+            <label class="asset-option">
+              <input type="checkbox" name="assets" value="{{ asset.ticker }}" checked>
+              <span class="asset-dot" style="--asset-color: {{ asset.color }}"></span>
+              <span><strong>{{ asset.name }}</strong><small>{{ asset.ticker }}</small></span>
+            </label>
+            {% endfor %}
+          </fieldset>
+          <button class="primary-button" id="submit-button" type="submit">
+            開始模擬
+          </button>
+        </form>
+        <p class="settings-footnote">
+          海外資產以 USD/TWD 換算新台幣。此比較不代表混合資產投資組合。
+        </p>
+      </aside>
+
+      <section class="results-area" aria-live="polite">
+        <div class="status-message" id="status-message" role="status">
+          <span class="status-icon" aria-hidden="true">i</span>
+          <span>調整左側設定後，按「開始模擬」載入結果。</span>
+        </div>
+        <div class="error-message" id="error-message" role="alert" hidden></div>
+        <div id="results" hidden>
+          <section class="result-section">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">01 / 歷史回測</p>
+                <h2>每個標的的帳戶價值</h2>
+              </div>
+              <span class="section-caption" id="period-caption"></span>
+            </div>
+            <div class="metric-grid" id="metric-grid"></div>
+            <div class="chart-panel">
+              <div class="chart-heading">
+                <h3>資產價值變化</h3>
+                <span>新台幣</span>
+              </div>
+              <svg id="history-chart" class="history-chart" viewBox="0 0 1000 420"
+                   role="img" aria-label="各標的歷史回測資產價值折線圖"></svg>
+              <div class="chart-legend" id="chart-legend"></div>
+            </div>
+            <p class="explanation">
+              年化報酬依投入日期和期末金額計算；最大回撤衡量標的從高點下跌的幅度。
+            </p>
+          </section>
+
+          <section class="result-section forecast-section">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">02 / 模型估算</p>
+                <h2>模型表現與歷史情境</h2>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">標的</th>
+                    <th scope="col">採用模型</th>
+                    <th scope="col">模型估計報酬</th>
+                    <th scope="col">歷史情境範圍</th>
+                    <th scope="col">測試 MAE</th>
+                    <th scope="col">零報酬基準 MAE</th>
+                  </tr>
+                </thead>
+                <tbody id="forecast-rows"></tbody>
+              </table>
+            </div>
+            <div class="forecast-note">
+              <strong>如何看這張表</strong>
+              <p>
+                歷史情境範圍取自保留測試期報酬的第 10 至第 90 百分位數，
+                不是信賴區間，也不保證未來會落在其中。MAE 越低代表測試期平均誤差越小，
+                請同時和零報酬基準比較。
+              </p>
+            </div>
+            <div class="warning-list" id="warning-list"></div>
+          </section>
+
+          <details class="method-details">
+            <summary>計算方式與使用限制</summary>
+            <ul>
+              <li>使用 Yahoo Finance 調整後價格；海外資產依 USD/TWD 匯率換算。</li>
+              <li>價格保留有效交易日，不用前一日報價填補週末或休市日。</li>
+              <li>定期定額把總預算平均投入每月第一個有效交易日。</li>
+              <li>波動度按每年 252 個 ETF 交易日或 365 個比特幣交易日年化。</li>
+              <li>模型只使用歷史價格特徵，並以時間順序切分資料選模和評估。</li>
+              <li>尚未計入手續費、稅負、滑價、配息稅務或匯兌成本。模型不保證未來表現。</li>
+            </ul>
+          </details>
+        </div>
+      </section>
+    </div>
+    <footer class="site-footer">
+      <span>教育用途的歷史分析工具，不提供個人化投資建議。</span>
+      <span>本機執行 · Flask + HTML</span>
+    </footer>
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</body>
+</html>

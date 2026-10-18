@@ -2,7 +2,6 @@
 venv/
 __pycache__/
 *.py[cod]
-.streamlit/secrets.toml
 .build/
 .output/
 .codex-finalizer/
